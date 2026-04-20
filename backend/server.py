@@ -439,6 +439,151 @@ async def list_reports(user: dict = Depends(get_current_user)):
 
 
 # ============================================================
+# ATTENDANCE / YOKLAMA
+# ============================================================
+
+class AttendanceEntry(BaseModel):
+    student_id: str
+    status: Literal["Geldi", "Gelmedi", "İzinli", "Geç Kaldı"]
+    notes: Optional[str] = None
+    check_in_time: Optional[str] = None      # "HH:MM"
+    check_out_time: Optional[str] = None
+
+
+class AttendanceDayRequest(BaseModel):
+    date: str               # "YYYY-MM-DD"
+    entries: List[AttendanceEntry]
+
+
+@api_router.post("/attendance")
+async def upsert_attendance_day(
+    body: AttendanceDayRequest, user: dict = Depends(get_current_user)
+):
+    teacher_id = user["user_id"]
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Verify each student belongs to teacher
+    student_ids = [e.student_id for e in body.entries]
+    valid_ids = set()
+    if student_ids:
+        cursor = db.students.find(
+            {"teacher_id": teacher_id, "id": {"$in": student_ids}},
+            {"_id": 0, "id": 1},
+        )
+        async for s in cursor:
+            valid_ids.add(s["id"])
+
+    results = []
+    for e in body.entries:
+        if e.student_id not in valid_ids:
+            continue
+        doc = {
+            "teacher_id": teacher_id,
+            "student_id": e.student_id,
+            "date": body.date,
+            "status": e.status,
+            "notes": e.notes,
+            "check_in_time": e.check_in_time,
+            "check_out_time": e.check_out_time,
+            "updated_at": now_iso,
+        }
+        await db.attendance.update_one(
+            {"teacher_id": teacher_id, "student_id": e.student_id, "date": body.date},
+            {"$set": doc, "$setOnInsert": {"created_at": now_iso, "id": f"att_{uuid.uuid4().hex[:12]}"}},
+            upsert=True,
+        )
+        results.append({**doc})
+    return {"date": body.date, "count": len(results), "entries": results}
+
+
+@api_router.get("/attendance")
+async def get_attendance_day(
+    date_str: str = Query(..., alias="date", description="YYYY-MM-DD"),
+    user: dict = Depends(get_current_user),
+):
+    """Returns all active students with their attendance for a given date."""
+    teacher_id = user["user_id"]
+    students = await db.students.find(
+        {"teacher_id": teacher_id, "status": "Aktif"}, {"_id": 0}
+    ).sort("first_name", 1).to_list(1000)
+
+    att_docs = await db.attendance.find(
+        {"teacher_id": teacher_id, "date": date_str}, {"_id": 0}
+    ).to_list(1000)
+    by_student = {a["student_id"]: a for a in att_docs}
+
+    entries = []
+    for s in students:
+        a = by_student.get(s["id"])
+        entries.append({
+            "student_id": s["id"],
+            "first_name": s["first_name"],
+            "last_name": s["last_name"],
+            "gender": s["gender"],
+            "status": a["status"] if a else None,
+            "notes": a.get("notes") if a else None,
+            "check_in_time": a.get("check_in_time") if a else None,
+            "check_out_time": a.get("check_out_time") if a else None,
+        })
+    return {"date": date_str, "entries": entries}
+
+
+@api_router.get("/attendance/range")
+async def get_attendance_range(
+    start: str = Query(...), end: str = Query(...),
+    user: dict = Depends(get_current_user),
+):
+    """Per-day aggregated counts for calendar heatmap."""
+    teacher_id = user["user_id"]
+    total_students = await db.students.count_documents(
+        {"teacher_id": teacher_id, "status": "Aktif"}
+    )
+    pipeline = [
+        {"$match": {
+            "teacher_id": teacher_id,
+            "date": {"$gte": start, "$lte": end},
+        }},
+        {"$group": {
+            "_id": {"date": "$date", "status": "$status"},
+            "count": {"$sum": 1},
+        }},
+    ]
+    rows = await db.attendance.aggregate(pipeline).to_list(10000)
+    by_date: dict = {}
+    for r in rows:
+        d = r["_id"]["date"]
+        s = r["_id"]["status"]
+        by_date.setdefault(d, {"Geldi": 0, "Gelmedi": 0, "İzinli": 0, "Geç Kaldı": 0})
+        by_date[d][s] = r["count"]
+    days = [{"date": d, **counts, "total_students": total_students} for d, counts in by_date.items()]
+    return {"start": start, "end": end, "total_students": total_students, "days": days}
+
+
+@api_router.get("/attendance/student/{student_id}")
+async def get_attendance_student(
+    student_id: str,
+    start: Optional[str] = Query(default=None),
+    end: Optional[str] = Query(default=None),
+    user: dict = Depends(get_current_user),
+):
+    teacher_id = user["user_id"]
+    student = await db.students.find_one(
+        {"id": student_id, "teacher_id": teacher_id}, {"_id": 0}
+    )
+    if not student:
+        raise HTTPException(status_code=404, detail="Öğrenci bulunamadı")
+    q = {"teacher_id": teacher_id, "student_id": student_id}
+    if start or end:
+        q["date"] = {}
+        if start:
+            q["date"]["$gte"] = start
+        if end:
+            q["date"]["$lte"] = end
+    docs = await db.attendance.find(q, {"_id": 0}).sort("date", -1).to_list(2000)
+    return {"student_id": student_id, "entries": docs}
+
+
+# ============================================================
 # DASHBOARD SUMMARY
 # ============================================================
 
@@ -463,6 +608,24 @@ async def get_dashboard(user: dict = Depends(get_current_user)):
         {"teacher_id": teacher_id}, {"_id": 0}
     ).sort("created_at", -1).limit(5).to_list(5)
 
+    # Today's attendance summary
+    today = datetime.now(timezone.utc).date().isoformat()
+    att_today_rows = await db.attendance.find(
+        {"teacher_id": teacher_id, "date": today}, {"_id": 0}
+    ).to_list(1000)
+    att_counts = {"Geldi": 0, "Gelmedi": 0, "İzinli": 0, "Geç Kaldı": 0}
+    for a in att_today_rows:
+        if a["status"] in att_counts:
+            att_counts[a["status"]] += 1
+    attendance_today = {
+        "date": today,
+        "marked": len(att_today_rows),
+        "present": att_counts["Geldi"],
+        "absent": att_counts["Gelmedi"],
+        "excused": att_counts["İzinli"],
+        "late": att_counts["Geç Kaldı"],
+    }
+
     return {
         "counts": {
             "total": total,
@@ -476,6 +639,7 @@ async def get_dashboard(user: dict = Depends(get_current_user)):
         "education_model": user.get("education_model"),
         "school_name": user.get("school_name"),
         "recent_students": [_student_doc_to_model(d) for d in recent_docs],
+        "attendance_today": attendance_today,
     }
 
 

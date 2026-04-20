@@ -12,6 +12,7 @@ import StudentNew from "@/pages/StudentNew";
 import StudentDetail from "@/pages/StudentDetail";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
+import Attendance from "@/pages/Attendance";
 import AuthCallback from "@/pages/AuthCallback";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
@@ -30,6 +31,7 @@ function AppRouter() {
       <Route path="/students" element={<ProtectedRoute><Students /></ProtectedRoute>} />
       <Route path="/students/new" element={<ProtectedRoute><StudentNew /></ProtectedRoute>} />
       <Route path="/students/:id" element={<ProtectedRoute><StudentDetail /></ProtectedRoute>} />
+      <Route path="/attendance" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

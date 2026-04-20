@@ -120,3 +120,66 @@ code {
         display: contents !important;
     }
 }
+
+/* Attendance Calendar (react-day-picker v8) */
+.attendance-calendar .rdp {
+    --rdp-cell-size: 40px;
+    --rdp-accent-color: #4B6858;
+    --rdp-background-color: #F1EDE4;
+    margin: 0;
+}
+.attendance-calendar .rdp-months { justify-content: center; }
+.attendance-calendar .rdp-caption_label {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 500;
+    text-transform: capitalize;
+    color: #28332D;
+}
+.attendance-calendar .rdp-head_cell {
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: #6B7280;
+}
+.attendance-calendar .rdp-day {
+    border-radius: 12px;
+    color: #28332D;
+    transition: all 0.15s ease;
+}
+.attendance-calendar .rdp-day:hover:not([disabled]) {
+    background: #F1EDE4;
+}
+.attendance-calendar .att-today {
+    box-shadow: inset 0 0 0 1px #4B6858;
+}
+.attendance-calendar .att-selected,
+.attendance-calendar .rdp-day_selected {
+    background: #4B6858 !important;
+    color: #fff !important;
+}
+.attendance-calendar .att-present {
+    background: #5E8B7E22;
+    color: #28332D;
+    position: relative;
+}
+.attendance-calendar .att-present::after,
+.attendance-calendar .att-partial::after,
+.attendance-calendar .att-absent::after {
+    content: "";
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+}
+.attendance-calendar .att-present::after { background: #5E8B7E; }
+.attendance-calendar .att-partial { background: #E8A36520; }
+.attendance-calendar .att-partial::after { background: #E8A365; }
+.attendance-calendar .att-absent { background: #C86B5E22; }
+.attendance-calendar .att-absent::after { background: #C86B5E; }
+.attendance-calendar .rdp-nav_button {
+    color: #4B6858;
+    border-radius: 999px;
+}

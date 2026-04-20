@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Baby,
   SunHorizon,
+  CalendarCheck,
 } from "@phosphor-icons/react";
 
 const SCHEDULE_ROWS = {
@@ -117,6 +118,44 @@ export default function Dashboard() {
             <Plus size={18} weight="bold" /> Yeni Öğrenci
           </Link>
         </div>
+
+        {/* Today's Attendance Strip */}
+        <Link
+          to="/attendance"
+          data-testid="attendance-strip"
+          className="block bg-white rounded-2xl border border-[#E6E2D6] p-5 sm:p-6 mb-6 transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-[#4B6858]/30"
+        >
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-[#F1EDE4] flex items-center justify-center">
+                <CalendarCheck size={24} weight="duotone" className="text-[#4B6858]" />
+              </div>
+              <div>
+                <p className="text-xs tracking-[0.2em] uppercase text-[#6B7280] font-semibold">Bugünün Yoklaması</p>
+                {data?.attendance_today?.marked > 0 ? (
+                  <p className="font-heading text-xl mt-0.5">
+                    <span className="text-[#5E8B7E]">{data.attendance_today.present}</span>
+                    <span className="text-[#6B7280] text-sm"> geldi · </span>
+                    <span className="text-[#C86B5E]">{data.attendance_today.absent}</span>
+                    <span className="text-[#6B7280] text-sm"> gelmedi · </span>
+                    <span className="text-[#E8A365]">{data.attendance_today.late}</span>
+                    <span className="text-[#6B7280] text-sm"> geç · </span>
+                    <span className="text-[#6B7280]">{data.attendance_today.excused}</span>
+                    <span className="text-[#6B7280] text-sm"> izinli</span>
+                  </p>
+                ) : (
+                  <p className="font-heading text-xl mt-0.5">Henüz işaretlenmedi</p>
+                )}
+                <p className="text-xs text-[#6B7280] mt-0.5">
+                  {data?.attendance_today?.marked || 0} / {c.active ?? 0} aktif öğrenci
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-[#4B6858] text-white px-4 py-2 text-xs">
+              Yoklamaya Git <ArrowRight size={14} weight="bold" />
+            </span>
+          </div>
+        </Link>
 
         {/* Stats Bento */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 fade-up fade-up-delay-1">

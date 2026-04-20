@@ -4,6 +4,7 @@ import {
   House,
   Users,
   CalendarBlank,
+  CalendarCheck,
   Gear,
   NotePencil,
   SignOut,
@@ -16,6 +17,7 @@ const NAV = [
   { to: "/dashboard", label: "Panel", icon: House },
   { to: "/students", label: "Öğrenciler", icon: Users },
   { to: "/students/new", label: "Yeni Kayıt", icon: NotePencil },
+  { to: "/attendance", label: "Yoklama", icon: CalendarCheck },
   { to: "/reports", label: "Raporlar", icon: CalendarBlank },
   { to: "/settings", label: "Sınıf Ayarları", icon: Gear },
 ];
