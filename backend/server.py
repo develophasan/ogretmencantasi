@@ -1051,7 +1051,7 @@ async def _run_assistant(user: dict, text: str) -> dict:
     # Load prior messages (last 10) to provide short conversation memory via system prompt
     prior = await db.chat_messages.find(
         {"teacher_id": teacher_id}, {"_id": 0}
-    ).sort("created_at", -1).to_list(10)
+    ).sort("created_at", -1).to_list(20)
     prior.reverse()
 
     ctx = await _build_context(user)
