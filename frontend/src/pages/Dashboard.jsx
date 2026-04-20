@@ -15,7 +15,24 @@ import {
   Plus,
   ArrowRight,
   Baby,
+  SunHorizon,
 } from "@phosphor-icons/react";
+
+const SCHEDULE_ROWS = {
+  arrival_time: { label: "Sınıfa Giriş", icon: Clock, accent: "#4B6858" },
+  breakfast_time: { label: "Kahvaltı", icon: Coffee, accent: "#E8A365" },
+  lunch_time: { label: "Öğle Yemeği", icon: ForkKnife, accent: "#D48D7C" },
+  afternoon_snack_time: { label: "İkindi", icon: Sun, accent: "#5E8B7E" },
+  departure_time: { label: "Sınıftan Çıkış", icon: Clock, accent: "#6B7280" },
+};
+
+function visibleScheduleFields(class_type, shift) {
+  if (class_type === "Tam Gün") return ["arrival_time", "breakfast_time", "lunch_time", "afternoon_snack_time", "departure_time"];
+  if (class_type === "Yarım Gün" && shift === "Sabahçı") return ["arrival_time", "breakfast_time", "departure_time"];
+  if (class_type === "Yarım Gün" && shift === "Öğleci") return ["arrival_time", "afternoon_snack_time", "departure_time"];
+  // Fallback: show everything if not set
+  return ["arrival_time", "breakfast_time", "lunch_time", "afternoon_snack_time", "departure_time"];
+}
 
 const StatTile = ({ icon: Icon, label, value, accent = "#4B6858", testId }) => (
   <div
@@ -112,16 +129,23 @@ export default function Dashboard() {
         <div className="grid md:grid-cols-5 gap-6 mt-6 fade-up fade-up-delay-2">
           {/* Schedule */}
           <div className="md:col-span-2 bg-white rounded-2xl border border-[#E6E2D6] p-6 sm:p-8">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2">
               <h2 className="font-heading text-xl">Bugünün Akışı</h2>
               <Link to="/settings" className="text-xs text-[#4B6858] hover:underline">Düzenle</Link>
             </div>
+            {(s.class_type || s.shift) && (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#F1EDE4] text-[#4B6858] text-xs mb-3">
+                <SunHorizon size={14} weight="duotone" />
+                {s.class_type}{s.shift ? ` · ${s.shift}` : ""}
+              </div>
+            )}
             <div className="divide-y divide-[#E6E2D6]">
-              <ScheduleRow icon={Clock} label="Sınıfa Giriş" time={s.arrival_time} accent="#4B6858" />
-              <ScheduleRow icon={Coffee} label="Kahvaltı" time={s.breakfast_time} accent="#E8A365" />
-              <ScheduleRow icon={ForkKnife} label="Öğle Yemeği" time={s.lunch_time} accent="#D48D7C" />
-              <ScheduleRow icon={Sun} label="İkindi" time={s.afternoon_snack_time} accent="#5E8B7E" />
-              <ScheduleRow icon={Clock} label="Sınıftan Çıkış" time={s.departure_time} accent="#6B7280" />
+              {visibleScheduleFields(s.class_type, s.shift).map((key) => {
+                const conf = SCHEDULE_ROWS[key];
+                return (
+                  <ScheduleRow key={key} icon={conf.icon} label={conf.label} time={s[key]} accent={conf.accent} />
+                );
+              })}
             </div>
           </div>
 

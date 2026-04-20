@@ -31,6 +31,8 @@ EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/
 # ============================================================
 
 class ClassSchedule(BaseModel):
+    class_type: Optional[Literal["Tam Gün", "Yarım Gün"]] = None
+    shift: Optional[Literal["Sabahçı", "Öğleci"]] = None   # only when Yarım Gün
     arrival_time: Optional[str] = None       # "08:30"
     departure_time: Optional[str] = None     # "16:00"
     breakfast_time: Optional[str] = None
@@ -204,6 +206,8 @@ async def create_session(body: SessionRequest, response: Response):
             "school_name": None,
             "education_model": None,
             "class_schedule": {
+                "class_type": None,
+                "shift": None,
                 "arrival_time": None,
                 "departure_time": None,
                 "breakfast_time": None,
