@@ -1128,25 +1128,36 @@ async def chat_voice(file: UploadFile = File(...), user: dict = Depends(get_curr
     content = await file.read()
     if len(content) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Ses dosyası 25MB'dan büyük")
-    # Save to temp file (Whisper needs a filename with extension)
     suffix = ".webm"
     if file.filename and "." in file.filename:
         suffix = "." + file.filename.rsplit(".", 1)[-1].lower()
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
+    transcript = ""
+    transcribe_error: Optional[str] = None
     try:
         stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
         with open(tmp_path, "rb") as af:
             resp = await stt.transcribe(file=af, model="whisper-1", response_format="json", language="tr")
-        transcript = getattr(resp, "text", "") or ""
+        transcript = (getattr(resp, "text", "") or "").strip()
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Whisper transcription error")
+        transcribe_error = str(exc)
     finally:
         try:
             os.remove(tmp_path)
         except Exception:
             pass
 
-    transcript = (transcript or "").strip()
+    if transcribe_error:
+        msg = transcribe_error.lower()
+        if "budget" in msg:
+            friendly = "Universal Key bakiyeniz tükendi. Profil → Universal Key → Bakiye Ekle bölümünden yükleme yapın."
+        else:
+            friendly = "Sesi işleyemedim, tekrar dener misiniz?"
+        return {"transcript": "", "reply": friendly, "executed": []}
+
     if not transcript:
         return {"transcript": "", "reply": "Sesi anlayamadım, tekrar eder misiniz?", "executed": []}
     result = await _run_assistant(user, transcript)

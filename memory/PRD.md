@@ -1,59 +1,49 @@
 # PRD — Öğretmen Çantası (Okul Öncesi Eğitim Yönetim Sistemi)
 
 ## Original Problem Statement
-Bir 'Okul Öncesi Eğitim Yönetim Sistemi' için tam donanımlı Backend ve Frontend altyapısı tasarla.
-Veri modelleme: Teachers (Ad-Soyad, Email, Şifre, Okul Adı, Eğitim Modeli Maarif/EÇE, Sınıf saatleri, yemek saatleri). Students (Zorunlu: Ad-Soyad, Doğum Tarihi, Cinsiyet; Opsiyonel: T.C., Veli, Adres, Sağlık vb.).
-Frontend: Dashboard, Sınıf Kurulum Sihirbazı, Aday Kayıt Formu, Öğrenci Kartları, Responsive.
-Teknik: React Hook Form, Date-picker, Axios, Context API.
+Bir 'Okul Öncesi Eğitim Yönetim Sistemi'. Teachers (ad-soyad, email, okul, Maarif/ECE, vardiya saatleri). Students (ad, soyad, doğum tarihi, cinsiyet + opsiyonel veli/sağlık/adres). Dashboard, kurulum sihirbazı, aday kayıt formu, öğrenci kartları, responsive.
 
 ## Architecture
-- Backend: FastAPI + Motor (async MongoDB), Pydantic v2 models, Emergent-managed Google OAuth with httpOnly cookie session_token
-- Frontend: React 19 + React Router v7 + TailwindCSS + shadcn/ui tokens + Phosphor Icons (duotone) + sonner toasts
-- Design: "Organic & Earthy" palette (sage #4B6858, terracotta #D48D7C, cream #FDFBF7). Typography: Outfit (headings) + Figtree (body). Turkish UI.
+- **Backend**: FastAPI + Motor + Pydantic v2 + Emergent Google Auth (httpOnly cookie 7-day)
+- **Frontend**: React 19 + React Router v7 + Tailwind + Phosphor Icons (duotone) + sonner toasts + react-hook-form
+- **AI**: Claude Sonnet 4.5 (emergentintegrations + Emergent Universal Key) · JSON-command execution pattern
+- **STT**: OpenAI Whisper-1 (emergentintegrations) · Türkçe
+- **Design**: "Organic & Earthy" (#4B6858 sage, #D48D7C terracotta, #FDFBF7 cream). Outfit + Figtree.
+
+## Implemented (2026-02 → 2026-04)
+- [x] Auth: /api/auth/{session,me,logout}
+- [x] Class settings: Tam Gün / Yarım Gün · Sabahçı / Öğleci dinamik saat alanları
+- [x] Students CRUD + search + status filter + teacher isolation
+- [x] Attendance: upsert/day/range/history + takvim (Türkçe) + koşullu vardiya saatleri
+- [x] Reports: boş 8 bölümlü taslak
+- [x] Daily Cases (Günlük Vakalar) — CRUD + AI ekleyebilir
+- [x] Activity Notes (Etkinlik Notları) — CRUD + AI ekleyebilir
+- [x] **AI Asistan (Chat)**
+  - /api/chat/message — Claude Sonnet 4.5, JSON output, komut yürütme
+  - /api/chat/voice — Whisper transcription + aynı pipeline
+  - /api/chat/history (GET/DELETE)
+  - Komutlar: mark_attendance, mark_all_present, add_daily_case, add_activity_note
+  - Katı sistem prompt'u: sadece JSON + görev dışı konuşmaz
+- [x] Mobile UX: Ortalanmış üst bar + 5 item Bottom Nav + Chat FAB
+- [x] Desktop: Yatay top nav + Chat docked panel (380×560)
+- [x] Pytest 61/62 ✅ (1 voice edge-case düzeltildi) · Playwright E2E ✅
 
 ## User Personas
-1. **Okul Öncesi Öğretmeni** — Tek başına 15-25 öğrencilik sınıfı yönetir. Masaüstü ve tablet kullanır, günlük veri girişi yapar.
-
-## Core Requirements (static)
-- Emergent Google Auth zorunlu (ek şifre yok)
-- Sınıf kurulumu (Maarif vs ECE) ilk girişte zorunlu
-- Öğrenci CRUD + sağlık notları + alerji rozetleri
-- Rapor taslağı (8 bölüm: sosyal-duygusal, bilişsel, dil, motor, öz bakım, yaratıcılık, notlar, öneriler)
-- Responsive (mobil + tablet)
-- Turkish UI baştan sona
-
-## Implemented (2026-02-20 → 2026-04-20)
-- [x] Backend `/api/auth/{session,me,logout}` — Emergent Google Auth
-- [x] Backend `/api/class-settings` GET/PUT (incl. class_type Tam/Yarım Gün + Sabahçı/Öğleci shift)
-- [x] Backend `/api/students` CRUD + search/status filter + teacher isolation
-- [x] Backend `/api/reports/draft` + `/api/reports` list (boş 8 bölüm)
-- [x] Backend `/api/attendance` (POST upsert, GET day, range, per-student history) — NEW
-- [x] Backend `/api/dashboard` özeti (attendance_today dahil)
-- [x] Frontend `/login` — split screen, Google ile devam et
-- [x] Frontend `/setup` — 4 adımlı sihirbaz (Okul → Model → Sınıf Tipi/Vardiya → Saatler)
-- [x] Akıllı saat/öğün mantığı: Sabahçı→kahvaltı, Öğleci→ikindi, Tam Gün→hepsi
-- [x] Frontend `/dashboard` — BUGÜNÜN YOKLAMASI özet + koşullu akış kartları
-- [x] Frontend `/students` — arama + status filtresi + grid
-- [x] Frontend `/students/new` — zorunlu/isteğe bağlı görsel ayrım + React Hook Form
-- [x] Frontend `/students/:id` — kart + inline düzenleme + ara/WhatsApp/sil
-- [x] Frontend `/attendance` — Türkçe takvim + günlük yoklama + otomatik vardiya saatleri — NEW
-- [x] Frontend `/reports` — tarih aralığı + modal taslak görüntüleme
-- [x] Frontend `/settings` — sınıf ayarları + sınıf tipi/vardiya güncellemesi
-- [x] Pytest suite (39/39 — 14'ü yoklama) + Playwright E2E geçti
+- **Okul Öncesi Öğretmeni**: 15-25 öğrencilik sınıfı yönetir, sık mobil kullanır, yoğun günde hızlı veri girer.
 
 ## Backlog
 ### P1
-- [ ] Aday Kayıt PDF formundan OCR import
-- [ ] AI rapor doldurma (Claude/GPT-5.2 entegrasyonu)
-- [ ] Öğrenci fotoğrafı yükleme (object storage)
-- [ ] Yoklama/devam takibi
+- [ ] Aday Kayıt PDF'inden OCR toplu içe aktarma
+- [ ] Öğrenci profil fotoğrafı (object storage)
+- [ ] AI rapor doldurma (yoklama + günlük vaka + etkinlik notu → dönem raporu)
 
 ### P2
-- [ ] Ebeveyn paylaşımlı rapor link'i
-- [ ] Sınıf takvimi ve etkinlikler
-- [ ] Çoklu sınıf desteği (bir öğretmen → birden fazla şube)
-- [ ] Shadcn Calendar ile tarih seçici iyileştirmesi
-- [ ] Öğrenci listesi sayfalama (100+ öğrenci için)
+- [ ] Server.py'ı routers'a böl (sınır: ~1200 satır)
+- [ ] Aylık devam raporu PDF dışa aktarma
+- [ ] Veli paylaşım linki (gözlem özeti)
+- [ ] Çoklu sınıf desteği
 
-## Next Tasks
-Suggested P1 önceliği: AI rapor doldurma — Claude Sonnet 4.5 ile boş taslağı dönem gözlemlerine göre doldurur.
+## Agent Notes
+- `_run_assistant` şu anda önceki user turnlarını Claude'a replay ediyor → maliyeti artırabilir. İleride session-memory optimizasyonu.
+- Sistem prompt JSON-only; düşük hata riski.
+- Voice endpoint artık tüm hatalarda 200 + dostça yanıt.
