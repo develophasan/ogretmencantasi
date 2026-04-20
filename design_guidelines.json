@@ -1,0 +1,128 @@
+{
+  "theme": "LIGHT",
+  "archetype": "1 (Organic & Earthy)",
+  "emotional_tone": "Calm, organized, warm, reliable, professional",
+  "design_philosophy": "A modern, professional productivity tool for preschool teachers. It avoids childish cartoon aesthetics while maintaining a warm, inviting atmosphere. Focuses on generous spacing, soft geometry, and earthy pastels to reduce cognitive load during a teacher's busy day.",
+  "colors": {
+    "background": "#FDFBF7",
+    "surface": "#FFFFFF",
+    "primary": "#4B6858",
+    "primary_hover": "#3A5244",
+    "primary_text": "#FFFFFF",
+    "secondary": "#D48D7C",
+    "secondary_hover": "#C37A6A",
+    "secondary_text": "#FFFFFF",
+    "text_main": "#28332D",
+    "text_muted": "#6B7280",
+    "border": "#E6E2D6",
+    "success": "#5E8B7E",
+    "warning": "#E8A365",
+    "danger": "#C86B5E",
+    "interactive_active": "#F1EDE4"
+  },
+  "typography": {
+    "headings": {
+      "family": "Outfit, sans-serif",
+      "h1": "text-4xl sm:text-5xl tracking-tight text-[#28332D] font-medium",
+      "h2": "text-2xl sm:text-3xl tracking-tight text-[#28332D] font-medium",
+      "h3": "text-xl sm:text-2xl tracking-tight text-[#28332D] font-medium",
+      "h4": "text-lg sm:text-xl tracking-tight text-[#28332D] font-medium",
+      "overline": "text-xs tracking-[0.2em] uppercase text-[#6B7280] font-semibold"
+    },
+    "body": {
+      "family": "Figtree, sans-serif",
+      "large": "text-lg leading-relaxed text-[#28332D]",
+      "base": "text-base leading-relaxed text-[#28332D]",
+      "small": "text-sm leading-relaxed text-[#6B7280]",
+      "xs": "text-xs leading-relaxed text-[#6B7280]"
+    }
+  },
+  "layout_and_spacing": {
+    "philosophy": "Control Room Grid for dashboards with generous internal padding.",
+    "page_container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12",
+    "card": "bg-white rounded-2xl border border-[#E6E2D6] shadow-sm p-6 sm:p-8 transition-all duration-200",
+    "card_hover": "hover:-translate-y-1 hover:shadow-md hover:border-[#4B6858]/30",
+    "input": "rounded-xl border-[#E6E2D6] focus:border-[#4B6858] focus:ring-[#4B6858] bg-[#FDFBF7]",
+    "button_radius": "rounded-full",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "grid_list": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+  },
+  "motion_and_interactions": {
+    "hover_states": "All interactive elements must have a smooth hover state (e.g., bg darkens, subtle lift).",
+    "transitions": "transition-all duration-200 ease-in-out",
+    "focus_rings": "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#4B6858] focus:ring-offset-[#FDFBF7]"
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "weight": "duotone",
+    "installation_command": "yarn add @phosphor-icons/react"
+  },
+  "media_urls": {
+    "login_background": {
+      "url": "https://images.unsplash.com/photo-1770520219404-b1c2296ea79a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMG5hdHVyYWwlMjBiYWNrZ3JvdW5kJTIwdGV4dHVyZSUyMHBhc3RlbHxlbnwwfHx8fDE3NzY2Njk5NDR8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Abstract pastel textured background. Use on the left side of the split-screen login page.",
+      "category": "background"
+    },
+    "dashboard_empty_state": {
+      "url": "https://images.pexels.com/photos/8087868/pexels-photo-8087868.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Happy preschool teacher in a colorful classroom. Use as a welcoming image in the empty state or onboarding dashboard.",
+      "category": "hero"
+    },
+    "placeholder_avatar": {
+      "url": "https://ui-avatars.com/api/?name=Öğretmen&background=4B6858&color=fff",
+      "description": "Default avatar for teacher profile.",
+      "category": "avatar"
+    }
+  },
+  "components_and_routes": {
+    "routes": [
+      {
+        "path": "/login",
+        "name": "Login",
+        "description": "Split screen layout. Left: Login background image with a welcoming quote 'Geleceği şekillendiren ellere, hoş geldiniz.' Right: Google Auth button."
+      },
+      {
+        "path": "/setup",
+        "name": "Sınıf Kurulum Sihirbazı",
+        "description": "Step-by-step wizard (React Hook Form + Zod). Step 1: Eğitim Modeli (Maarif vs EÇE). Step 2: Sınıf Saatleri (Giriş, Çıkış, Kahvaltı, Öğle Yemeği, İkindi)."
+      },
+      {
+        "path": "/dashboard",
+        "name": "Kontrol Paneli",
+        "description": "Overview dashboard. Bento grid showing 'Toplam Öğrenci', 'Bugünkü Yemek Saatleri', 'Günlük Aktiviteler'. Uses the placeholder image if no class is set up."
+      },
+      {
+        "path": "/students",
+        "name": "Öğrenci Listesi",
+        "description": "Grid of StudentCards. Each card has name, age, health warning badge (if any allergies), and quick action buttons (Call Parent, WhatsApp)."
+      },
+      {
+        "path": "/students/new",
+        "name": "Öğrenci Kayıt Formu",
+        "description": "Comprehensive form. Visual separation using grouped form sections with soft background highlights. Required fields marked with '*'. Optional fields clearly distinct."
+      },
+      {
+        "path": "/reports",
+        "name": "Rapor Taslağı",
+        "description": "Interface to select date range (Shadcn Date Picker with range) and generate a draft report shell."
+      },
+      {
+        "path": "/settings",
+        "name": "Sınıf Ayarları",
+        "description": "Update education model and daily schedules."
+      }
+    ]
+  },
+  "technical_instructions_to_main_agent": [
+    "Use Vite + React + Tailwind + React Router DOM.",
+    "Implement pure React Context for 'AuthContext' and 'ClassContext'. Mock the Google Login flow by setting a hardcoded user object on click.",
+    "Use pure HTML+Tailwind for complex dashboard layouts to maintain the bento grid structure, instead of over-relying on rigid Shadcn Cards.",
+    "Use React Hook Form + Zod for 'Sınıf Kurulum Sihirbazı' and 'Öğrenci Kayıt Formu'.",
+    "For the backend (FastAPI), implement MongoDB schemas using Motor (async). Collections: 'teachers' and 'students'.",
+    "All interactive elements MUST have a 'data-testid' attribute (e.g., data-testid='login-google-button').",
+    "Ensure language is entirely Turkish across the UI.",
+    "Do NOT use purple or violet anywhere in the application.",
+    "Use Phosphor Icons (duotone) for all iconography.",
+    "Include an 'Allergies' badge in the Student Card using the 'danger' color (#C86B5E) to immediately alert the teacher."
+  ]
+}
