@@ -22,22 +22,24 @@ Teknik: React Hook Form, Date-picker, Axios, Context API.
 - Responsive (mobil + tablet)
 - Turkish UI baştan sona
 
-## Implemented (2026-02-20)
+## Implemented (2026-02-20 → 2026-04-20)
 - [x] Backend `/api/auth/{session,me,logout}` — Emergent Google Auth
 - [x] Backend `/api/class-settings` GET/PUT (incl. class_type Tam/Yarım Gün + Sabahçı/Öğleci shift)
 - [x] Backend `/api/students` CRUD + search/status filter + teacher isolation
 - [x] Backend `/api/reports/draft` + `/api/reports` list (boş 8 bölüm)
-- [x] Backend `/api/dashboard` özeti
+- [x] Backend `/api/attendance` (POST upsert, GET day, range, per-student history) — NEW
+- [x] Backend `/api/dashboard` özeti (attendance_today dahil)
 - [x] Frontend `/login` — split screen, Google ile devam et
 - [x] Frontend `/setup` — 4 adımlı sihirbaz (Okul → Model → Sınıf Tipi/Vardiya → Saatler)
 - [x] Akıllı saat/öğün mantığı: Sabahçı→kahvaltı, Öğleci→ikindi, Tam Gün→hepsi
-- [x] Frontend `/dashboard` — koşullu akış kartları (vardiyaya göre)
+- [x] Frontend `/dashboard` — BUGÜNÜN YOKLAMASI özet + koşullu akış kartları
 - [x] Frontend `/students` — arama + status filtresi + grid
 - [x] Frontend `/students/new` — zorunlu/isteğe bağlı görsel ayrım + React Hook Form
 - [x] Frontend `/students/:id` — kart + inline düzenleme + ara/WhatsApp/sil
+- [x] Frontend `/attendance` — Türkçe takvim + günlük yoklama + otomatik vardiya saatleri — NEW
 - [x] Frontend `/reports` — tarih aralığı + modal taslak görüntüleme
 - [x] Frontend `/settings` — sınıf ayarları + sınıf tipi/vardiya güncellemesi
-- [x] Pytest suite (25/25) + Playwright E2E geçti
+- [x] Pytest suite (39/39 — 14'ü yoklama) + Playwright E2E geçti
 
 ## Backlog
 ### P1
