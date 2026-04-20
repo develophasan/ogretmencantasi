@@ -808,6 +808,7 @@ async def delete_activity_note(note_id: str, user: dict = Depends(get_current_us
 # ============================================================
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 SYSTEM_PROMPT = """Sen "Asistan"sın. Türkiye'de bir okul öncesi öğretmeni için çalışıyorsun.
 GÖREVİN SADECE: öğretmenin söylediği/yazdığı veriyi, VERİTABANINA DOĞRU ŞEKİLDE KAYDETMEK.
@@ -1047,29 +1048,31 @@ def _parse_llm_json(text: str) -> dict:
 
 async def _run_assistant(user: dict, text: str) -> dict:
     teacher_id = user["user_id"]
-    # Load prior messages (last 20) for multi-turn context
+    # Load prior messages (last 10) to provide short conversation memory via system prompt
     prior = await db.chat_messages.find(
         {"teacher_id": teacher_id}, {"_id": 0}
-    ).sort("created_at", -1).to_list(20)
+    ).sort("created_at", -1).to_list(10)
     prior.reverse()
 
     ctx = await _build_context(user)
-    system = SYSTEM_PROMPT + "\n\nSİSTEM BAĞLAMI:\n" + ctx
+    history_text = ""
+    if prior:
+        lines = []
+        for m in prior:
+            role = "Öğretmen" if m.get("role") == "user" else "Asistan"
+            content = (m.get("content") or "").strip().replace("\n", " ")
+            if len(content) > 180:
+                content = content[:180] + "…"
+            lines.append(f"{role}: {content}")
+        history_text = "\n\nSON KONUŞMA ÖZETİ:\n" + "\n".join(lines)
+
+    system = SYSTEM_PROMPT + "\n\nSİSTEM BAĞLAMI:\n" + ctx + history_text
 
     chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"asistan-{teacher_id}",
+        api_key=GEMINI_API_KEY or EMERGENT_LLM_KEY,
+        session_id=f"asistan-{teacher_id}-{uuid.uuid4().hex[:6]}",
         system_message=system,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-
-    # Re-inject prior turns so Claude has memory of the conversation
-    for m in prior:
-        # Replay user turns only — assistant will regenerate its own reasoning
-        if m.get("role") == "user":
-            try:
-                await chat.send_message(UserMessage(text=m["content"]))
-            except Exception:
-                pass
+    ).with_model("gemini", "gemini-2.5-flash")
 
     now_iso = datetime.now(timezone.utc).isoformat()
     # Save user message
@@ -1086,7 +1089,10 @@ async def _run_assistant(user: dict, text: str) -> dict:
     except Exception as exc:
         logging.getLogger(__name__).exception("LLM error")
         msg = str(exc)
-        if "budget" in msg.lower() or "Budget" in msg:
+        low = msg.lower()
+        if "rate" in low or "quota" in low or "resource_exhausted" in low:
+            friendly = "Gemini API dakika kotasını aştı. Bir dakika sonra tekrar deneyin."
+        elif "budget" in low:
             friendly = "Universal Key bakiyeniz tükendi. Profil → Universal Key → Bakiye Ekle bölümünden yükleme yapın."
         else:
             friendly = "Şu an bağlanamadım. Biraz sonra tekrar deneyin."
@@ -1113,7 +1119,7 @@ async def _run_assistant(user: dict, text: str) -> dict:
 
 @api_router.post("/chat/message")
 async def chat_message(body: ChatRequest, user: dict = Depends(get_current_user)):
-    if not EMERGENT_LLM_KEY:
+    if not (GEMINI_API_KEY or EMERGENT_LLM_KEY):
         raise HTTPException(status_code=503, detail="LLM key yapılandırılmamış")
     text = (body.message or "").strip()
     if not text:
