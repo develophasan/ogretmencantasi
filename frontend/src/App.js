@@ -13,12 +13,13 @@ import StudentDetail from "@/pages/StudentDetail";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
 import Attendance from "@/pages/Attendance";
+import DailyCases from "@/pages/DailyCases";
+import ActivityNotes from "@/pages/ActivityNotes";
 import AuthCallback from "@/pages/AuthCallback";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 function AppRouter() {
   const location = useLocation();
-  // Handle OAuth callback synchronously (before ProtectedRoute)
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
   }
@@ -32,6 +33,8 @@ function AppRouter() {
       <Route path="/students/new" element={<ProtectedRoute><StudentNew /></ProtectedRoute>} />
       <Route path="/students/:id" element={<ProtectedRoute><StudentDetail /></ProtectedRoute>} />
       <Route path="/attendance" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
+      <Route path="/daily-cases" element={<ProtectedRoute><DailyCases /></ProtectedRoute>} />
+      <Route path="/activity-notes" element={<ProtectedRoute><ActivityNotes /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
