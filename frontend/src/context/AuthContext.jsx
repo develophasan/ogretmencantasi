@@ -19,14 +19,18 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // CRITICAL: If returning from OAuth callback, skip the /me check.
-    // AuthCallback will exchange the session_id and establish the session first.
-    if (typeof window !== "undefined" && window.location.hash?.includes("session_id=")) {
-      setLoading(false);
-      return;
-    }
     checkAuth();
   }, [checkAuth]);
+
+  const phoneLogin = async (phone) => {
+    try {
+      const { data } = await api.post("/auth/phone-login", { phone });
+      setUser(data.user);
+      return data.user;
+    } catch (error) {
+      throw error;
+    }
+  };
 
   const logout = async () => {
     try {
@@ -43,7 +47,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, setUser, loading, logout, refreshUser, phoneLogin }}>
       {children}
     </AuthContext.Provider>
   );

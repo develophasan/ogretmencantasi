@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, Query, UploadFile, File
+from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends, Query, UploadFile, File, BackgroundTasks
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -13,8 +13,7 @@ from typing import List, Optional, Literal, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
-from emergentintegrations.llm.chat import LlmChat, UserMessage
-from emergentintegrations.llm.openai import OpenAISpeechToText
+import google.generativeai as genai
 
 
 ROOT_DIR = Path(__file__).parent
@@ -25,10 +24,70 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+class TelegramClient:
+    def __init__(self):
+        self.token = os.environ.get("TELEGRAM_BOT_TOKEN")
+        self.base_url = f"https://api.telegram.org/bot{self.token}"
+
+    async def send_message(self, chat_id: int, text: str, reply_markup: dict = None):
+        if not self.token:
+            return False
+        url = f"{self.base_url}/sendMessage"
+        payload = {"chat_id": chat_id, "text": text}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(url, json=payload)
+                return resp.status_code == 200
+            except:
+                return False
+
+    async def get_file_path(self, file_id: str):
+        url = f"{self.base_url}/getFile"
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, params={"file_id": file_id})
+            if resp.status_code == 200:
+                return resp.json().get("result", {}).get("file_path")
+        return None
+
+    async def download_file(self, file_path: str):
+        url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                ext = Path(file_path).suffix or ".oga"
+                temp_fd, temp_path = tempfile.mkstemp(suffix=ext)
+                with os.fdopen(temp_fd, "wb") as f:
+                    f.write(resp.content)
+                return temp_path
+        return None
+
+telegram_client = TelegramClient()
+
 app = FastAPI(title="Okul Öncesi Eğitim Yönetim Sistemi")
+
+@app.on_event("startup")
+async def startup_db_client():
+    # Create unique index for phone numbers
+    try:
+        await db.users.create_index("phone", unique=True)
+        await db.registration_requests.create_index("phone", unique=True)
+        print("Database indices verified.")
+    except Exception as e:
+        print(f"Error creating indices: {e}")
 api_router = APIRouter(prefix="/api")
 
 EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+
+generation_config = {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "top_k": 64,
+    "max_output_tokens": 8192,
+    "response_mime_type": "text/plain",
+}
 
 # ============================================================
 # MODELS
@@ -129,14 +188,21 @@ class Student(StudentBase):
     updated_at: datetime
 
 
-class SessionRequest(BaseModel):
-    session_id: str
+class PhoneLoginRequest(BaseModel):
+    phone: str
 
 
 class ReportDraftRequest(BaseModel):
     student_id: str
     start_date: str
     end_date: str
+
+
+class RegistrationRequestCreate(BaseModel):
+    name: str
+    school_name: str
+    email: EmailStr
+    phone: str
 
 
 # ============================================================
@@ -168,61 +234,85 @@ async def get_current_user(request: Request) -> dict:
     user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    
+    if not user.get("is_approved", False) and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hesabınız henüz onaylanmadı. Lütfen yönetici onayını bekleyin.")
+        
     return user
+
+
+async def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Bu işlem için yetkiniz yok.")
+    return user
+
+
+async def log_ai_usage(user_id: str, model: str, prompt_tokens: int = 0, response_tokens: int = 0, features: str = ""):
+    usage_doc = {
+        "user_id": user_id,
+        "model": model,
+        "prompt_tokens": prompt_tokens,
+        "response_tokens": response_tokens,
+        "features": features,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    await db.ai_usage.insert_one(usage_doc)
 
 
 # ============================================================
 # AUTH ROUTES
 # ============================================================
 
-@api_router.post("/auth/session")
-async def create_session(body: SessionRequest, response: Response):
-    """Exchange Emergent session_id for our session_token, set httpOnly cookie."""
-    async with httpx.AsyncClient(timeout=15.0) as http:
-        r = await http.get(
-            EMERGENT_SESSION_URL,
-            headers={"X-Session-ID": body.session_id},
-        )
-    if r.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid session_id")
-    data = r.json()
+@api_router.post("/auth/phone-login")
+async def phone_login(body: PhoneLoginRequest, response: Response):
+    """Simple login with phone number (No OTP for now)."""
+    print(f"DEBUG: Login attempt for phone: {body.phone}")
+    phone = body.phone.strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Telefon numarası gereklidir")
 
-    email = data["email"]
-    name = data["name"]
-    picture = data.get("picture")
-    session_token = data["session_token"]
+    # Check if this is the bootstrap Admin
+    admin_phone = os.environ.get("ADMIN_PHONE")
+    is_bootstrap_admin = admin_phone and phone == admin_phone.strip()
 
-    # Upsert user
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        user_id = existing["user_id"]
-        await db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"name": name, "picture": picture}},
-        )
-    else:
+    existing = await db.users.find_one({"phone": phone}, {"_id": 0})
+    
+    if not existing and not is_bootstrap_admin:
+        # Check if there is a pending registration request
+        pending = await db.registration_requests.find_one({"phone": phone, "status": "pending"})
+        if pending:
+            raise HTTPException(status_code=403, detail="Kayıt talebiniz beklemede. Lütfen onaylanmasını bekleyin.")
+        raise HTTPException(status_code=404, detail="Kayıtlı kullanıcı bulunamadı. Lütfen kayıt talebi oluşturun.")
+
+    if not existing and is_bootstrap_admin:
+        # Bootstrap the admin user
         user_id = f"user_{uuid.uuid4().hex[:12]}"
-        await db.users.insert_one({
+        existing = {
             "user_id": user_id,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "school_name": None,
-            "education_model": None,
-            "class_schedule": {
-                "class_type": None,
-                "shift": None,
-                "arrival_time": None,
-                "departure_time": None,
-                "breakfast_time": None,
-                "lunch_time": None,
-                "afternoon_snack_time": None,
-            },
-            "setup_completed": False,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+            "phone": phone,
+            "name": "Sistem Yöneticisi",
+            "role": "admin",
+            "is_approved": True,
+            "setup_completed": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.users.insert_one(existing.copy())
+    elif is_bootstrap_admin:
+        # Ensure existing admin is promoted
+        await db.users.update_one(
+            {"phone": phone},
+            {"$set": {"role": "admin", "is_approved": True}}
+        )
+        existing["role"] = "admin"
+        existing["is_approved"] = True
+
+    if not existing.get("is_approved", False) and existing.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hesabınız henüz onaylanmadı. Lütfen yönetici onayını bekleyin.")
+
+    user_id = existing["user_id"]
 
     # Store session
+    session_token = f"sess_{uuid.uuid4().hex}"
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     await db.user_sessions.insert_one({
         "user_id": user_id,
@@ -231,12 +321,15 @@ async def create_session(body: SessionRequest, response: Response):
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
+    # Use a secure but local-dev friendly cookie configuration
+    # Note: samesite="none" requires secure=True, which usually requires HTTPS.
+    # For local development, samesite="lax" and secure=False is better.
     response.set_cookie(
         key="session_token",
         value=session_token,
         httponly=True,
-        secure=True,
-        samesite="none",
+        secure=False,
+        samesite="lax",
         max_age=7 * 24 * 60 * 60,
         path="/",
     )
@@ -250,6 +343,189 @@ async def auth_me(user: dict = Depends(get_current_user)):
     return _serialize_user(user)
 
 
+@api_router.post("/auth/register-request")
+async def register_request(body: RegistrationRequestCreate):
+    phone = body.phone.strip()
+    # Check if already a user
+    existing = await db.users.find_one({"phone": phone})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu numara zaten kayıtlı. Lütfen giriş yapın.")
+    
+    # Check if already a pending request
+    pending = await db.registration_requests.find_one({"phone": phone, "status": "pending"})
+    if pending:
+        raise HTTPException(status_code=400, detail="Zaten bekleyen bir kayıt talebiniz var.")
+    
+    request_doc = {
+        "id": f"req_{uuid.uuid4().hex[:12]}",
+        "name": body.name,
+        "school_name": body.school_name,
+        "email": body.email,
+        "phone": phone,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.registration_requests.insert_one(request_doc)
+    return {"message": "Kayıt talebiniz başarıyla alındı. Onaylandığında giriş yapabileceksiniz."}
+
+
+# ============================================================
+# ADMIN ROUTES
+# ============================================================
+
+@api_router.get("/admin/dashboard", dependencies=[Depends(get_admin_user)])
+async def admin_dashboard():
+    total_teachers = await db.users.count_documents({"role": {"$ne": "admin"}})
+    total_approved = await db.users.count_documents({"role": {"$ne": "admin"}, "is_approved": True})
+    pending_requests = await db.registration_requests.count_documents({"status": "pending"})
+    total_students = await db.students.count_documents({})
+    
+    # Simple AI usage aggregation (last 30 days)
+    # In a real app, use MongoDB aggregation pipelines
+    ai_calls = await db.ai_usage.count_documents({})
+    
+    return {
+        "total_teachers": total_teachers,
+        "total_approved": total_approved,
+        "pending_requests": pending_requests,
+        "total_students": total_students,
+        "ai_calls": ai_calls
+    }
+
+@api_router.get("/admin/requests", dependencies=[Depends(get_admin_user)])
+async def admin_get_requests():
+    requests = await db.registration_requests.find({"status": "pending"}).sort("created_at", -1).to_list(100)
+    for r in requests:
+        r["_id"] = str(r["_id"])
+    return requests
+
+@api_router.post("/admin/requests/{req_id}/approve", dependencies=[Depends(get_admin_user)])
+async def admin_approve_request(req_id: str):
+    req = await db.registration_requests.find_one({"id": req_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı.")
+    
+    if req["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Talep zaten işlenmiş.")
+    
+    # Create user
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    new_user = {
+        "user_id": user_id,
+        "phone": req["phone"],
+        "email": req["email"],
+        "name": req["name"],
+        "school_name": req["school_name"],
+        "role": "teacher",
+        "is_approved": True,
+        "setup_completed": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "class_schedule": {
+            "class_type": None,
+            "shift": None,
+            "arrival_time": None,
+            "departure_time": None,
+            "breakfast_time": None,
+            "lunch_time": None,
+            "afternoon_snack_time": None,
+        }
+    }
+    await db.users.insert_one(new_user)
+    await db.registration_requests.update_one({"id": req_id}, {"$set": {"status": "approved"}})
+    return {"message": "Kayıt onaylandı ve kullanıcı oluşturuldu."}
+
+@api_router.post("/admin/requests/{req_id}/reject", dependencies=[Depends(get_admin_user)])
+async def admin_reject_request(req_id: str):
+    await db.registration_requests.update_one({"id": req_id}, {"$set": {"status": "rejected"}})
+    return {"message": "Talep reddedildi."}
+
+@api_router.get("/admin/teachers", dependencies=[Depends(get_admin_user)])
+async def admin_get_teachers():
+    teachers = await db.users.find({"role": {"$ne": "admin"}}).to_list(100)
+    for t in teachers:
+        t["_id"] = str(t["_id"])
+        # Add student count
+        t["student_count"] = await db.students.count_documents({"teacher_id": t["user_id"]})
+        # Add AI usage count
+        t["ai_usage_count"] = await db.ai_usage.count_documents({"user_id": t["user_id"]})
+    return teachers
+
+
+# --- NEW LOGGING ENDPOINTS ---
+
+@api_router.get("/admin/logs/chat", dependencies=[Depends(get_admin_user)])
+async def admin_get_chat_logs():
+    messages = await db.chat_messages.find().sort("timestamp", -1).limit(200).to_list(200)
+    # Resolve teacher names
+    teacher_cache = {}
+    for msg in messages:
+        msg["_id"] = str(msg["_id"])
+        t_id = msg.get("teacher_id")
+        if t_id not in teacher_cache:
+            t = await db.users.find_one({"user_id": t_id}, {"name": 1})
+            teacher_cache[t_id] = t["name"] if t else "Bilinmeyen"
+        msg["teacher_name"] = teacher_cache[t_id]
+    return messages
+
+@api_router.get("/admin/logs/activities", dependencies=[Depends(get_admin_user)])
+async def admin_get_activities():
+    # Unified feed: attendance, cases, notes
+    attendance = await db.attendance.find().sort("updated_at", -1).limit(50).to_list(50)
+    cases = await db.daily_cases.find().sort("date", -1).limit(50).to_list(50)
+    notes = await db.activity_notes.find().sort("created_at", -1).limit(50).to_list(50)
+    
+    feed = []
+    # Normalize formats
+    teacher_cache = {}
+    async def get_t_name(t_id):
+        if t_id not in teacher_cache:
+            t = await db.users.find_one({"user_id": t_id}, {"name": 1})
+            teacher_cache[t_id] = t["name"] if t else "Bilinmeyen"
+        return teacher_cache[t_id]
+
+    for a in attendance:
+        feed.append({
+            "id": str(a["_id"]),
+            "type": "attendance",
+            "teacher_name": await get_t_name(a["teacher_id"]),
+            "details": f"Yoklama alındı: {a.get('status')}",
+            "timestamp": a.get("updated_at")
+        })
+    for c in cases:
+        feed.append({
+            "id": str(c["_id"]),
+            "type": "case",
+            "teacher_name": await get_t_name(c["teacher_id"]),
+            "details": f"Vaka eklendi: {c.get('title')}",
+            "timestamp": c.get("date")
+        })
+    for n in notes:
+        feed.append({
+            "id": str(n["_id"]),
+            "type": "note",
+            "teacher_name": await get_t_name(n["teacher_id"]),
+            "details": f"Etkinlik notu eklendi",
+            "timestamp": n.get("created_at")
+        })
+    
+    # Sort and return latest 100
+    feed.sort(key=lambda x: x["timestamp"], reverse=True)
+    return feed[:100]
+
+@api_router.get("/admin/logs/ai", dependencies=[Depends(get_admin_user)])
+async def admin_get_ai_logs():
+    logs = await db.ai_usage.find().sort("timestamp", -1).limit(200).to_list(200)
+    teacher_cache = {}
+    for log in logs:
+        log["_id"] = str(log["_id"])
+        t_id = log.get("user_id")
+        if t_id not in teacher_cache:
+            t = await db.users.find_one({"user_id": t_id}, {"name": 1})
+            teacher_cache[t_id] = t["name"] if t else "Bilinmeyen"
+        log["teacher_name"] = teacher_cache[t_id]
+    return logs
+
+
 @api_router.post("/auth/logout")
 async def logout(request: Request, response: Response):
     session_token = request.cookies.get("session_token")
@@ -259,20 +535,23 @@ async def logout(request: Request, response: Response):
             session_token = auth_header[7:]
     if session_token:
         await db.user_sessions.delete_one({"session_token": session_token})
-    response.delete_cookie("session_token", path="/", samesite="none", secure=True)
+    response.delete_cookie("session_token", path="/", samesite="lax", secure=False)
     return {"ok": True}
 
 
 def _serialize_user(user: dict) -> dict:
     out = {
         "user_id": user["user_id"],
-        "email": user["email"],
-        "name": user["name"],
+        "phone": user.get("phone"),
+        "email": user.get("email"),
+        "name": user.get("name"),
         "picture": user.get("picture"),
         "school_name": user.get("school_name"),
         "education_model": user.get("education_model"),
         "class_schedule": user.get("class_schedule") or {},
         "setup_completed": user.get("setup_completed", False),
+        "role": user.get("role", "teacher"),
+        "is_approved": user.get("is_approved", False),
     }
     return out
 
@@ -807,8 +1086,19 @@ async def delete_activity_note(note_id: str, user: dict = Depends(get_current_us
 # CHAT ASISTAN
 # ============================================================
 
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model_to_use = "gemini-3-flash-preview"
+        shared_model = genai.GenerativeModel(
+            model_name=model_to_use,
+            generation_config=generation_config,
+        )
+    except Exception as e:
+        shared_model = None
+else:
+    shared_model = None
 
 SYSTEM_PROMPT = """Sen "Asistan"sın. Türkiye'de bir okul öncesi öğretmeni için çalışıyorsun.
 GÖREVİN SADECE: öğretmenin söylediği/yazdığı veriyi, VERİTABANINA DOĞRU ŞEKİLDE KAYDETMEK.
@@ -1067,12 +1357,9 @@ async def _run_assistant(user: dict, text: str) -> dict:
         history_text = "\n\nSON KONUŞMA ÖZETİ:\n" + "\n".join(lines)
 
     system = SYSTEM_PROMPT + "\n\nSİSTEM BAĞLAMI:\n" + ctx + history_text
-
-    chat = LlmChat(
-        api_key=GEMINI_API_KEY or EMERGENT_LLM_KEY,
-        session_id=f"asistan-{teacher_id}-{uuid.uuid4().hex[:6]}",
-        system_message=system,
-    ).with_model("gemini", "gemini-2.5-flash")
+    
+    if not shared_model:
+         raise Exception("Gemini API key not configured")
 
     now_iso = datetime.now(timezone.utc).isoformat()
     # Save user message
@@ -1085,17 +1372,25 @@ async def _run_assistant(user: dict, text: str) -> dict:
     })
 
     try:
-        raw = await chat.send_message(UserMessage(text=text))
+        # Using generate_content for better stability
+        response = await shared_model.generate_content_async(system + "\n\nUSER: " + text)
+        raw = response.text
+
+        # Log AI Usage
+        await log_ai_usage(
+            user_id=teacher_id,
+            model="gemini-1.5-flash",
+            prompt_tokens=len(text),
+            response_tokens=len(raw),
+            features="chat"
+        )
     except Exception as exc:
+        err_str = str(exc)
         logging.getLogger(__name__).exception("LLM error")
-        msg = str(exc)
-        low = msg.lower()
-        if "rate" in low or "quota" in low or "resource_exhausted" in low:
-            friendly = "Gemini API dakika kotasını aştı. Bir dakika sonra tekrar deneyin."
-        elif "budget" in low:
-            friendly = "Universal Key bakiyeniz tükendi. Profil → Universal Key → Bakiye Ekle bölümünden yükleme yapın."
+        if "429" in err_str or "quota" in err_str.lower():
+            friendly = f"Gemini Kotası: {err_str[:100]}"
         else:
-            friendly = "Şu an bağlanamadım. Biraz sonra tekrar deneyin."
+            friendly = f"Gemini Hatası: {err_str[:150]}"
         raw = json.dumps({"reply": friendly, "commands": []})
 
     data = _parse_llm_json(raw if isinstance(raw, str) else str(raw))
@@ -1119,8 +1414,8 @@ async def _run_assistant(user: dict, text: str) -> dict:
 
 @api_router.post("/chat/message")
 async def chat_message(body: ChatRequest, user: dict = Depends(get_current_user)):
-    if not (GEMINI_API_KEY or EMERGENT_LLM_KEY):
-        raise HTTPException(status_code=503, detail="LLM key yapılandırılmamış")
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="Gemini API key yapılandırılmamış")
     text = (body.message or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Boş mesaj")
@@ -1129,33 +1424,14 @@ async def chat_message(body: ChatRequest, user: dict = Depends(get_current_user)
 
 @api_router.post("/chat/voice")
 async def chat_voice(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=503, detail="LLM key yapılandırılmamış")
-    content = await file.read()
-    if len(content) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Ses dosyası 25MB'dan büyük")
-    suffix = ".webm"
-    if file.filename and "." in file.filename:
-        suffix = "." + file.filename.rsplit(".", 1)[-1].lower()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
     transcript = ""
-    transcribe_error: Optional[str] = None
+    transcribe_error = "Sesle komut özelliği şu an devre dışıdır. Lütfen metin yazarak asistanı kullanın."
     try:
-        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
-        with open(tmp_path, "rb") as af:
-            resp = await stt.transcribe(file=af, model="whisper-1", response_format="json", language="tr")
-        transcript = (getattr(resp, "text", "") or "").strip()
+        # Placeholder for future Gemini native audio support
+        pass
     except Exception as exc:
-        logging.getLogger(__name__).exception("Whisper transcription error")
+        logging.getLogger(__name__).exception("Transcription error")
         transcribe_error = str(exc)
-    finally:
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
-
     if transcribe_error:
         msg = transcribe_error.lower()
         if "budget" in msg:
@@ -1181,6 +1457,133 @@ async def chat_history(user: dict = Depends(get_current_user)):
 @api_router.delete("/chat/history")
 async def chat_clear(user: dict = Depends(get_current_user)):
     await db.chat_messages.delete_many({"teacher_id": user["user_id"]})
+    return {"ok": True}
+
+
+
+
+# In-memory cache for processed telegram updates
+processed_updates = set()
+
+async def process_telegram_ai(chat_id: int, user: dict, chat_text: str, source: str):
+    try:
+        # Run assistant
+        result = await _run_assistant(user, chat_text)
+        ai_content = result.get("reply") or "Cevap üretilemedi."
+
+        # Log AI Usage
+        await log_ai_usage(user["user_id"], "gemini-1.5-flash", len(chat_text), len(ai_content), f"{source}_chat")
+
+        # Send response back to Telegram
+        await telegram_client.send_message(chat_id, ai_content)
+    except Exception as e:
+        err_msg = str(e)
+        logging.getLogger(__name__).error(f"Telegram Background AI Error: {err_msg}")
+        await telegram_client.send_message(chat_id, f"Bağlantı hatası: {err_msg[:100]}...")
+
+@api_router.post("/telegram/webhook")
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
+    # Optional: Verify secret token
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    expected = os.environ.get("TELEGRAM_SECRET_TOKEN")
+    if expected and secret != expected:
+        return Response(status_code=403)
+
+    try:
+        data = await request.json()
+    except:
+        return {"ok": True}
+
+    # Deduplication
+    update_id = data.get("update_id")
+    if update_id in processed_updates:
+        return {"ok": True}
+    if update_id:
+        processed_updates.add(update_id)
+        # Keep only last 100
+        if len(processed_updates) > 100:
+            processed_updates.pop()
+
+    message = data.get("message")
+    if not message:
+        return {"ok": True}
+
+    chat_id = message["chat"]["id"]
+    text = message.get("text")
+    voice = message.get("voice")
+    contact = message.get("contact")
+
+    # 1. Identity Mapping
+    user = await db.users.find_one({"telegram_chat_id": chat_id})
+    
+    if contact:
+        phone = contact.get("phone_number", "").replace("+", "")
+        clean_phone = phone.replace("90", "", 1) if phone.startswith("90") else phone
+        if len(clean_phone) > 10: clean_phone = clean_phone[-10:]
+        target_user = await db.users.find_one({"phone": clean_phone})
+        if target_user:
+            await db.users.update_one({"user_id": target_user["user_id"]}, {"$set": {"telegram_chat_id": chat_id}})
+            await telegram_client.send_message(chat_id, f"Teşekkürler {target_user['name']}! Hesabınız bağlandı.")
+        return {"ok": True}
+
+    if not user:
+        if contact:
+            phone = contact.get("phone_number", "").replace("+", "")
+            # Normalize phone (remove 90 if exists, take last 10 digits)
+            clean_phone = phone.replace("90", "", 1) if phone.startswith("90") else phone
+            if len(clean_phone) > 10: clean_phone = clean_phone[-10:]
+            
+            target_user = await db.users.find_one({"phone": clean_phone})
+            if target_user:
+                await db.users.update_one({"user_id": target_user["user_id"]}, {"$set": {"telegram_chat_id": chat_id}})
+                await telegram_client.send_message(chat_id, f"Güvenlik doğrulaması başarılı! Harika {target_user['name']}, hesabınız güvenli bir şekilde bağlandı.")
+            else:
+                await telegram_client.send_message(chat_id, "Üzgünüm, bu telefon numarası sisteme kayıtlı değil. Lütfen okul yönetiminden kaydınızı kontrol edin.")
+            return {"ok": True}
+
+        # If not sharing contact yet
+        markup = {
+            "keyboard": [[{"text": "📱 Numaramı Paylaş ve Doğrula", "request_contact": True}]],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
+        }
+        await telegram_client.send_message(chat_id, "Merhaba! Güvenliğiniz için lütfen aşağıdaki butona tıklayarak Telegram'da kayıtlı numaranızı paylaşın.", reply_markup=markup)
+        return {"ok": True}
+
+    # 4. Process Message (Async Background Task)
+    async def async_logic():
+        chat_text = text or ""
+        if voice:
+            file_path = await telegram_client.get_file_path(voice["file_id"])
+            if file_path:
+                media_path = await telegram_client.download_file(file_path)
+                if media_path:
+                    try:
+                        audio_file = genai.upload_file(path=media_path)
+                        prompt = "Bu sesli mesajı yazıya dök (STT). Sadece transkripti ver."
+                        response = shared_model.generate_content([prompt, audio_file])
+                        chat_text = response.text
+                        os.remove(media_path)
+                    except Exception as e:
+                        await telegram_client.send_message(chat_id, f"Ses hatası: {str(e)}")
+                        return
+
+        if not chat_text:
+            return
+
+        # Log user message
+        await db.chat_messages.insert_one({
+            "id": f"msg_{uuid.uuid4().hex[:12]}",
+            "teacher_id": user["user_id"],
+            "role": "user",
+            "content": chat_text,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "telegram"
+        })
+
+        await process_telegram_ai(chat_id, user, chat_text, "telegram")
+
+    background_tasks.add_task(async_logic)
     return {"ok": True}
 
 

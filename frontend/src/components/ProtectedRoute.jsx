@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 
-export default function ProtectedRoute({ children, requireSetup = true }) {
+export default function ProtectedRoute({ children, requireSetup = true, requireAdmin = false }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -13,7 +13,12 @@ export default function ProtectedRoute({ children, requireSetup = true }) {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (requireSetup && !user.setup_completed && location.pathname !== "/setup") {
+  
+  if (requireAdmin && user.role !== "admin") {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (user.role !== "admin" && requireSetup && !user.setup_completed && location.pathname !== "/setup") {
     return <Navigate to="/setup" replace />;
   }
   return children;

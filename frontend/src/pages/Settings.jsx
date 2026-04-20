@@ -13,6 +13,7 @@ import {
   SunHorizon,
   Sun,
   Moon,
+  SignOut,
 } from "@phosphor-icons/react";
 
 function visibleScheduleFields(class_type, shift) {
@@ -36,7 +37,7 @@ function defaultsFor(ct, sh) {
 }
 
 export default function Settings() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, logout } = useAuth();
   const [saving, setSaving] = useState(false);
   const { register, handleSubmit, watch, setValue } = useForm({
     defaultValues: {
@@ -247,14 +248,26 @@ export default function Settings() {
             )}
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex flex-col sm:flex-row justify-between gap-4 pt-6 border-t border-[#E6E2D6]">
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Oturumu kapatmak istediğinize emin misiniz?")) {
+                  logout();
+                }
+              }}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm text-[#6B7280] hover:text-[#C86B5E] hover:bg-[#F1EDE4] transition-all"
+            >
+              <SignOut size={18} weight="duotone" />
+              Oturumu Kapat
+            </button>
             <button
               type="submit"
               disabled={saving}
               data-testid="settings-save-btn"
-              className="inline-flex items-center gap-2 bg-[#4B6858] hover:bg-[#3A5244] text-white px-6 py-3 rounded-full text-sm transition-all hover:-translate-y-0.5 disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 bg-[#4B6858] hover:bg-[#3A5244] text-white px-8 py-3 rounded-full text-sm transition-all hover:-translate-y-0.5 disabled:opacity-60 shadow-md"
             >
-              {saving ? "Kaydediliyor…" : "Kaydet"} <FloppyDisk size={16} weight="duotone" />
+              {saving ? "Kaydediliyor…" : "Değişiklikleri Kaydet"} <FloppyDisk size={16} weight="duotone" />
             </button>
           </div>
         </form>

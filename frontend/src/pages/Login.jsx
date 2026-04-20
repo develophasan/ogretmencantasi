@@ -1,10 +1,33 @@
-import { GoogleLogo, GraduationCap, Sparkle } from "@phosphor-icons/react";
+import { GraduationCap, Sparkle, Phone, ArrowRight } from "@phosphor-icons/react";
+import { useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { useNavigate, Link } from "react-router-dom";
+import { toast } from "sonner";
 
-// REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Login() {
-  const handleGoogle = () => {
-    const redirectUrl = window.location.origin + "/dashboard";
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { phoneLogin } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!phone.trim()) {
+      toast.error("Lütfen telefon numaranızı girin.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await phoneLogin(phone);
+      toast.success("Başarıyla giriş yapıldı.");
+      navigate("/dashboard");
+    } catch (error) {
+      console.error("Login error details:", error);
+      const msg = error.response?.data?.detail || "Giriş yapılırken bir hata oluştu.";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,19 +76,47 @@ export default function Login() {
               Oturum Aç
             </p>
             <h2 className="font-heading text-3xl sm:text-4xl mt-3">Sınıfınıza Girin</h2>
-            <p className="text-[#6B7280] mt-3 leading-relaxed">
-              Google hesabınızla güvenle giriş yapın. Ekstra bir şifre hatırlamanıza gerek yok.
-            </p>
+            <div className="text-[#6B7280] mt-3 leading-relaxed flex flex-col gap-2">
+              <p>Telefon numaranızla giriş yapın.</p>
+              <p className="text-xs">
+                Hesabınız yok mu?{" "}
+                <Link to="/register-request" className="text-[#4B6858] font-semibold hover:underline">
+                  Kayıt Talebi Oluşturun
+                </Link>
+              </p>
+            </div>
           </div>
 
-          <button
-            onClick={handleGoogle}
-            data-testid="login-google-button"
-            className="w-full flex items-center justify-center gap-3 bg-[#28332D] hover:bg-[#111816] text-white rounded-full px-6 py-4 transition-all duration-200 hover:-translate-y-0.5 shadow-sm"
-          >
-            <GoogleLogo size={20} weight="bold" />
-            <span className="text-sm font-medium">Google ile Devam Et</span>
-          </button>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]">
+                <Phone size={18} weight="duotone" />
+              </div>
+              <input
+                type="tel"
+                placeholder="5XX XXX XX XX"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full bg-[#F1EDE4]/50 border border-[#E6E2D6] rounded-2xl pl-11 pr-4 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#4B6858]/20 focus:border-[#4B6858] transition-all"
+                disabled={loading}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-3 bg-[#28332D] hover:bg-[#111816] disabled:opacity-50 text-white rounded-full px-6 py-4 transition-all duration-200 hover:-translate-y-0.5 shadow-sm"
+            >
+              {loading ? (
+                "Giriş yapılıyor..."
+              ) : (
+                <>
+                  <span className="text-sm font-medium">Giriş Yap</span>
+                  <ArrowRight size={18} weight="bold" />
+                </>
+              )}
+            </button>
+          </form>
 
           <div className="soft-divider" />
 

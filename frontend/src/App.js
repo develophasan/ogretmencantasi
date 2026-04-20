@@ -16,6 +16,8 @@ import Attendance from "@/pages/Attendance";
 import DailyCases from "@/pages/DailyCases";
 import ActivityNotes from "@/pages/ActivityNotes";
 import AuthCallback from "@/pages/AuthCallback";
+import RegisterRequest from "@/pages/RegisterRequest";
+import AdminDashboard from "@/pages/AdminDashboard";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 function AppRouter() {
@@ -27,7 +29,9 @@ function AppRouter() {
     <Routes>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/register-request" element={<RegisterRequest />} />
       <Route path="/setup" element={<ProtectedRoute requireSetup={false}><Setup /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/students" element={<ProtectedRoute><Students /></ProtectedRoute>} />
       <Route path="/students/new" element={<ProtectedRoute><StudentNew /></ProtectedRoute>} />
