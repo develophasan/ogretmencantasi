@@ -873,15 +873,15 @@ async def get_attendance_day(
         a = by_student.get(s["id"])
         entries.append({
             "student_id": s["id"],
-            "first_name": s["first_name"],
-            "last_name": s["last_name"],
-            "gender": s["gender"],
+            "first_name": s.get("first_name", ""),
+            "last_name": s.get("last_name", ""),
+            "gender": s.get("gender", "Bilinmiyor"),
             "status": a["status"] if a else None,
             "notes": a.get("notes") if a else None,
             "check_in_time": a.get("check_in_time") if a else None,
             "check_out_time": a.get("check_out_time") if a else None,
         })
-    return {"date": date_str, "entries": entries}
+    return _serialize_doc({"date": date_str, "entries": entries})
 
 
 @api_router.get("/attendance/range")
