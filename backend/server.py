@@ -1187,12 +1187,13 @@ KURALLAR (kesin):
 5) Öğrenci adı geçerse tam isim veya parçalı isim farketmez; eşleşmeyi backend yapar. Sen adı 'student_name' olarak ilet.
 6) Desteklenen action değerleri VE args şemaları:
    - "mark_attendance": { "date": "YYYY-MM-DD (verilmezse bugün)", "entries": [ { "student_name": "...", "status": "Geldi|Gelmedi|Geç Kaldı|İzinli", "notes": "opsiyonel" } ] }
-   - "mark_all_present": { "date": "YYYY-MM-DD (opsiyonel)" }  // istisnalar varsa entries alanı ile bildir
+   - "mark_all_present": { "date": "YYYY-MM-DD (opsiyonel)" }
    - "add_daily_case": { "student_name": "opsiyonel", "title": "kısa başlık", "description": "ayrıntı", "date": "YYYY-MM-DD (opsiyonel)" }
    - "add_activity_note": { "activity_name": "...", "description": "...", "date": "YYYY-MM-DD (opsiyonel)" }
-7) Birden fazla öğrenci için tek seferde commands tek bir mark_attendance içinde entries listesinde topla.
+   - "enroll_students": { "students": [ { "first_name": "...", "last_name": "soyismi verilmezse boş bırak" } ] }
+7) Birden fazla öğrenci için tek seferde commands tek bir mark_attendance veya tek bir enroll_students içinde topla.
 8) Tarih verilmezse sistemin verdiği 'today' değerini kullan.
-9) Eğer kullanıcı selam verir ya da sorar ("nasılsın", "merhaba") SADECE kısaca yanıt ver, commands boş bırak. Örn: {"reply":"Buradayım. Yoklama, günlük vaka veya etkinlik notu için söyleyin.","commands":[]}
+9) Eğer kullanıcı selam verir ya da sorar ("nasılsın", "merhaba") SADECE kısaca yanıt ver, commands boş bırak. Örn: {"reply":"Buradayım. Yoklama, öğrenci kaydı, günlük vaka veya etkinlik notu için söyleyin.","commands":[]}
 10) Kullanıcı yoklamada gelmeyen öğrencileri söyler ve "geri kalanı geldi" derse, önce mark_all_present kullan; belirtilen gelmeyenleri de mark_attendance ile Gelmedi olarak ekle.
 11) KESİNLİKLE MARKDOWN KULLANMA. Sadece JSON döndür, başka hiçbir şey.
 """
@@ -1366,6 +1367,33 @@ async def _execute_commands(teacher_id: str, commands: List[dict]) -> List[dict]
                 await db.activity_notes.insert_one(doc.copy())
                 doc.pop("_id", None)
                 results.append({"action": action, "ok": True, "note": doc})
+
+            elif action == "enroll_students":
+                now_iso = datetime.now(timezone.utc).isoformat()
+                students_in = args.get("students") or []
+                saved_students = []
+                for s_data in students_in:
+                    fname = s_data.get("first_name", "").strip()
+                    lname = s_data.get("last_name", "").strip()
+                    if not fname:
+                        continue
+                    
+                    s_id = f"stu_{uuid.uuid4().hex[:12]}"
+                    new_student = {
+                        "id": s_id,
+                        "teacher_id": teacher_id,
+                        "first_name": fname,
+                        "last_name": lname,
+                        "status": "Aktif",
+                        "created_at": now_iso,
+                        "updated_at": now_iso
+                    }
+                    await db.students.insert_one(new_student)
+                    saved_students.append({
+                        "id": s_id,
+                        "name": f"{fname} {lname}"
+                    })
+                results.append({"action": action, "ok": True, "count": len(saved_students), "students": saved_students})
             else:
                 results.append({"action": action, "ok": False, "error": "unknown_action"})
         except Exception as e:
