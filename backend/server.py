@@ -3,6 +3,12 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import ssl
+try:
+    import certifi
+    ca = certifi.where()
+except ImportError:
+    ca = None
 import os
 import logging
 import json
@@ -21,13 +27,23 @@ load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-# Robust MongoDB connection strings for cloud environments
-if "tlsAllowInvalidCertificates" not in mongo_url:
-    sep = "&" if "?" in mongo_url else "?"
-    mongo_url += f"{sep}tlsAllowInvalidCertificates=true"
+db_name = os.environ['DB_NAME']
 
-client = AsyncIOMotorClient(mongo_url, tlsAllowInvalidCertificates=True)
-db = client[os.environ['DB_NAME']]
+# Robust MongoDB connection strings for cloud environments
+client_kwargs = {
+    "tlsAllowInvalidCertificates": True,
+}
+
+if ca:
+    client_kwargs["tlsCAFile"] = ca
+
+# Ensure common parameters are present
+if "retryWrites" not in mongo_url:
+    sep = "&" if "?" in mongo_url else "?"
+    mongo_url += f"{sep}retryWrites=true&w=majority"
+
+client = AsyncIOMotorClient(mongo_url, **client_kwargs)
+db = client[db_name]
 
 class TelegramClient:
     def __init__(self):
@@ -82,6 +98,19 @@ async def startup_db_client():
         print("Database indices verified.")
     except Exception as e:
         print(f"Error creating indices: {e}")
+
+@app.get("/api/health")
+async def health_check():
+    try:
+        # Basic ping to verify DB connection
+        await db.command("ping")
+        return {"status": "ok", "db": "connected", "time": datetime.now(timezone.utc).isoformat()}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "db": "disconnected", "error": str(e)}
+        )
+
 api_router = APIRouter(prefix="/api")
 
 EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
