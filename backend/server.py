@@ -860,7 +860,7 @@ async def get_attendance_day(
     """Returns all active students with their attendance for a given date."""
     teacher_id = user["user_id"]
     students = await db.students.find(
-        {"teacher_id": teacher_id, "status": "Aktif"}, {"_id": 0}
+        {"teacher_id": teacher_id, "status": {"$ne": "Pasif"}}, {"_id": 0}
     ).sort("first_name", 1).to_list(1000)
 
     att_docs = await db.attendance.find(
@@ -892,7 +892,7 @@ async def get_attendance_range(
     """Per-day aggregated counts for calendar heatmap."""
     teacher_id = user["user_id"]
     total_students = await db.students.count_documents(
-        {"teacher_id": teacher_id, "status": "Aktif"}
+        {"teacher_id": teacher_id, "status": {"$ne": "Pasif"}}
     )
     pipeline = [
         {"$match": {
@@ -947,7 +947,7 @@ async def get_attendance_student(
 async def get_dashboard(user: dict = Depends(get_current_user)):
     teacher_id = user["user_id"]
     total = await db.students.count_documents({"teacher_id": teacher_id})
-    active = await db.students.count_documents({"teacher_id": teacher_id, "status": "Aktif"})
+    active = await db.students.count_documents({"teacher_id": teacher_id, "status": {"$ne": "Pasif"}})
     passive = total - active
 
     # Gender breakdown
@@ -1039,6 +1039,23 @@ async def create_daily_case(body: DailyCaseCreate, user: dict = Depends(get_curr
     return doc
 
 
+def _serialize_doc(doc: dict) -> dict:
+    """Safely convert MongoDB docs to JSON-friendly dicts."""
+    if not doc: return doc
+    # Convert _id if present (though we usually have 'id')
+    if "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    # Convert all datetime objects to ISO strings
+    for k, v in doc.items():
+        if isinstance(v, datetime):
+            doc[k] = v.isoformat()
+        elif isinstance(v, list):
+            doc[k] = [_serialize_doc(i) if isinstance(i, dict) else i for i in v]
+        elif isinstance(v, dict):
+            doc[k] = _serialize_doc(v)
+    return doc
+
+
 @api_router.get("/daily-cases")
 async def list_daily_cases(
     student_id: Optional[str] = Query(default=None),
@@ -1056,7 +1073,7 @@ async def list_daily_cases(
         if end:
             q["date"]["$lte"] = end
     docs = await db.daily_cases.find(q, {"_id": 0}).sort("date", -1).to_list(500)
-    return docs
+    return [_serialize_doc(d) for d in docs]
 
 
 @api_router.put("/daily-cases/{case_id}")
