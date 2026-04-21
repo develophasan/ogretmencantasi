@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import Layout from "@/components/Layout";
@@ -12,7 +12,7 @@ export default function Students() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = {};
@@ -23,9 +23,11 @@ export default function Students() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, q]);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleDelete = async (student) => {
     if (!window.confirm(`${student.first_name} ${student.last_name} silinsin mi?`)) return;

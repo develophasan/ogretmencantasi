@@ -21,7 +21,12 @@ load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+# Robust MongoDB connection strings for cloud environments
+if "tlsAllowInvalidCertificates" not in mongo_url:
+    sep = "&" if "?" in mongo_url else "?"
+    mongo_url += f"{sep}tlsAllowInvalidCertificates=true"
+
+client = AsyncIOMotorClient(mongo_url, tlsAllowInvalidCertificates=True)
 db = client[os.environ['DB_NAME']]
 
 class TelegramClient:
@@ -1591,10 +1596,20 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 app.include_router(api_router)
 
 # CORS
+cors_origins = os.environ.get('CORS_ORIGINS', '*').split(',')
+# Add common production and dev origins if not present
+extra_origins = [
+    "https://delightful-wholeness-production-a765.up.railway.app",
+    "https://ogretmencantasi-production.up.railway.app"
+]
+for origin in extra_origins:
+    if origin not in cors_origins:
+        cors_origins.append(origin)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
