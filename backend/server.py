@@ -1706,28 +1706,39 @@ async def telegram_setup():
 # Include router (MUST be after all @api_router decorators)
 app.include_router(api_router)
 
-# CORS
-cors_origins_env = os.environ.get('CORS_ORIGINS', '')
-cors_origins = [o.strip() for o in cors_origins_env.split(',') if o.strip() and o.strip() != '*']
-
-# Always include essential production and dev origins
-extra_origins = [
+# CORS Logic
+allowed_origins = [
     "https://delightful-wholeness-production-a765.up.railway.app",
     "https://ogretmencantasi-production.up.railway.app",
     "http://localhost:3000",
-    "http://127.0.0.1:3000"
+    "http://127.0.0.1:3000",
+    "http://localhost:8000"
 ]
-for origin in extra_origins:
-    if origin not in cors_origins:
-        cors_origins.append(origin)
+
+# Add from env if present
+env_origins = os.environ.get('CORS_ORIGINS', '')
+if env_origins:
+    for o in env_origins.split(','):
+        o = o.strip()
+        if o and o != '*' and o not in allowed_origins:
+            allowed_origins.append(o)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def log_origin_middleware(request: Request, call_next):
+    origin = request.headers.get("origin")
+    # Log origin to help debug Railway CORS
+    if origin:
+        print(f"DEBUG: Incoming request from Origin: {origin}")
+    response = await call_next(request)
+    return response
 
 logging.basicConfig(
     level=logging.INFO,
