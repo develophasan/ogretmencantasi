@@ -27,6 +27,10 @@ export default function Students() {
 
   useEffect(() => {
     load();
+    
+    // Listen for AI-driven enrollment events
+    window.addEventListener("student-added", load);
+    return () => window.removeEventListener("student-added", load);
   }, [load]);
 
   const handleDelete = async (student) => {

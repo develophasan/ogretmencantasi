@@ -22,6 +22,7 @@ function exec_label(exec) {
   if (exec.action === "mark_all_present") return `Tümü Geldi (${exec.count || 0} öğrenci)`;
   if (exec.action === "add_daily_case") return `Günlük vaka kaydedildi: ${exec.case?.title}`;
   if (exec.action === "add_activity_note") return `Etkinlik notu kaydedildi: ${exec.note?.activity_name}`;
+  if (exec.action === "enroll_students") return `${exec.count || 0} öğrenci kaydedildi`;
   return exec.error ? `Hata: ${exec.error}` : exec.action;
 }
 
@@ -73,6 +74,9 @@ export default function ChatWidget() {
           created_at: new Date().toISOString(),
         },
       ]);
+      if (data.executed?.some(e => e.action === "enroll_students" && e.ok)) {
+        window.dispatchEvent(new CustomEvent("student-added"));
+      }
     } catch (_e) {
       toast.error("Mesaj gönderilemedi.");
     } finally {
@@ -136,6 +140,9 @@ export default function ChatWidget() {
           executed: data.executed,
           created_at: new Date().toISOString(),
         });
+        if (data.executed?.some(e => e.action === "enroll_students" && e.ok)) {
+          window.dispatchEvent(new CustomEvent("student-added"));
+        }
         return next;
       });
     } catch (_e) {
