@@ -212,9 +212,10 @@ class StudentBase(BaseModel):
     # Required
     first_name: str
     last_name: str
-    birth_date: str          # ISO date
-    gender: Literal["Kız", "Erkek"]
-    # Optional
+    # Optional with placeholders for AI enrollment
+    birth_date: Optional[str] = None          # ISO date
+    gender: Optional[Literal["Kız", "Erkek", "Bilinmiyor"]] = "Bilinmiyor"
+    # Optional fields
     tc_no: Optional[str] = None
     parent_mother: Optional[ParentInfo] = None
     parent_father: Optional[ParentInfo] = None
@@ -236,7 +237,7 @@ class StudentUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     birth_date: Optional[str] = None
-    gender: Optional[Literal["Kız", "Erkek"]] = None
+    gender: Optional[Literal["Kız", "Erkek", "Bilinmiyor"]] = None
     tc_no: Optional[str] = None
     parent_mother: Optional[ParentInfo] = None
     parent_father: Optional[ParentInfo] = None
@@ -255,7 +256,7 @@ class Student(StudentBase):
     id: str
     teacher_id: str
     status: Literal["Aktif", "Pasif"] = "Aktif"
-    enrollment_date: str
+    enrollment_date: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -1379,12 +1380,16 @@ async def _execute_commands(teacher_id: str, commands: List[dict]) -> List[dict]
                         continue
                     
                     s_id = f"stu_{uuid.uuid4().hex[:12]}"
+                    now_date = datetime.now(timezone.utc).date().isoformat()
                     new_student = {
                         "id": s_id,
                         "teacher_id": teacher_id,
                         "first_name": fname,
                         "last_name": lname,
+                        "birth_date": now_date,  # Placeholder for AI enrollment
+                        "gender": "Bilinmiyor",
                         "status": "Aktif",
+                        "enrollment_date": now_date,
                         "created_at": now_iso,
                         "updated_at": now_iso
                     }
