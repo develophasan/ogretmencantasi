@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import ssl
+import socket
 try:
     import certifi
     ca = certifi.where()
@@ -29,13 +30,24 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 db_name = os.environ['DB_NAME']
 
-# Robust MongoDB connection strings for cloud environments
-client_kwargs = {
-    "tlsAllowInvalidCertificates": True,
-}
+# Build a robust SSL context forcing TLS 1.2 or higher
+ssl_context = ssl.create_default_context(cafile=ca)
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE  # For initial troubleshooting
+try:
+    # Explicitly force TLS 1.2+
+    ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+except AttributeError:
+    # Fallback for older python versions
+    ssl_context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
 
-if ca:
-    client_kwargs["tlsCAFile"] = ca
+client_kwargs = {
+    "tls": True,
+    "ssl_context": ssl_context,
+    "tlsAllowInvalidCertificates": True,
+    "serverSelectionTimeoutMS": 5000,
+    "connectTimeoutMS": 5000,
+}
 
 # Ensure common parameters are present
 if "retryWrites" not in mongo_url:
@@ -101,15 +113,30 @@ async def startup_db_client():
 
 @app.get("/api/health")
 async def health_check():
+    health = {
+        "status": "ok",
+        "time": datetime.now(timezone.utc).isoformat(),
+        "network": "unknown",
+        "db": "disconnected"
+    }
+    
+    # 1. Test Network Connectivity (DNS/Socket)
     try:
-        # Basic ping to verify DB connection
-        await db.command("ping")
-        return {"status": "ok", "db": "connected", "time": datetime.now(timezone.utc).isoformat()}
+        # Check if we can resolve the specific shard address from the error logs
+        socket.gethostbyname("ac-dlt1o7v-shard-00-00.jjfg2ay.mongodb.net")
+        health["network"] = "reachable"
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "db": "disconnected", "error": str(e)}
-        )
+        health["network"] = f"unreachable: {str(e)}"
+
+    # 2. Test DB Connection
+    try:
+        await db.command("ping")
+        health["db"] = "connected"
+    except Exception as e:
+        health["db"] = f"error: {str(e)}"
+        return JSONResponse(status_code=500, content=health)
+    
+    return health
 
 api_router = APIRouter(prefix="/api")
 
