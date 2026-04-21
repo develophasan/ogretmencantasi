@@ -88,14 +88,32 @@ class TelegramClient:
     async def download_file(self, file_path: str):
         url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                ext = Path(file_path).suffix or ".oga"
-                temp_fd, temp_path = tempfile.mkstemp(suffix=ext)
-                with os.fdopen(temp_fd, "wb") as f:
-                    f.write(resp.content)
-                return temp_path
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    ext = Path(file_path).suffix or ".oga"
+                    temp_fd, temp_path = tempfile.mkstemp(suffix=ext)
+                    with os.fdopen(temp_fd, "wb") as f:
+                        f.write(resp.content)
+                    return temp_path
+            except Exception as e:
+                print(f"Error downloading file: {e}")
+                return None
         return None
+
+    async def set_webhook(self, webhook_url: str, secret_token: str = None):
+        if not self.token:
+            return False, "Bot token missing"
+        
+        url = f"{self.base_url}/setWebhook"
+        params = {"url": webhook_url}
+        if secret_token:
+            params["secret_token"] = secret_token
+            
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, json=params)
+            data = resp.json()
+            return data.get("ok", False), data.get("description", "Unknown error")
 
 telegram_client = TelegramClient()
 
@@ -1646,6 +1664,22 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 
     background_tasks.add_task(async_logic)
     return {"ok": True}
+
+
+@api_router.get("/telegram/setup")
+async def telegram_setup():
+    base_url = os.environ.get("REACT_APP_API_URL")
+    if not base_url:
+        return {"ok": False, "error": "REACT_APP_API_URL environment variable is missing."}
+    
+    webhook_url = f"{base_url}/api/telegram/webhook"
+    secret = os.environ.get("TELEGRAM_SECRET_TOKEN")
+    
+    ok, description = await telegram_client.set_webhook(webhook_url, secret)
+    if ok:
+        return {"ok": True, "message": f"Webhook successfully set to {webhook_url}", "description": description}
+    else:
+        return {"ok": False, "error": description}
 
 
 # Include router (MUST be after all @api_router decorators)
