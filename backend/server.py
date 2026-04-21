@@ -30,20 +30,13 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 db_name = os.environ['DB_NAME']
 
-# Build a robust SSL context forcing TLS 1.2 or higher
-ssl_context = ssl.create_default_context(cafile=ca)
-ssl_context.check_hostname = False
-ssl_context.verify_mode = ssl.CERT_NONE  # For initial troubleshooting
-try:
-    # Explicitly force TLS 1.2+
-    ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
-except AttributeError:
-    # Fallback for older python versions
-    ssl_context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+# MongoDB connection (Certifi bundle for stable SSL)
+import certifi
+ca = certifi.where()
 
 client_kwargs = {
     "tls": True,
-    "tlsContext": ssl_context,
+    "tlsCAFile": ca,
     "tlsAllowInvalidCertificates": True,
     "serverSelectionTimeoutMS": 5000,
     "connectTimeoutMS": 5000,
