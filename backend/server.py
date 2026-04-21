@@ -43,7 +43,7 @@ except AttributeError:
 
 client_kwargs = {
     "tls": True,
-    "ssl_context": ssl_context,
+    "tlsContext": ssl_context,
     "tlsAllowInvalidCertificates": True,
     "serverSelectionTimeoutMS": 5000,
     "connectTimeoutMS": 5000,
